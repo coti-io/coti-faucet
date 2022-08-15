@@ -7,7 +7,7 @@ import { GetCotiReqDto, GetCotiResDto } from './dtos/faucet.dto';
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
-  // @UseGuards(new AuthenticatedGuard())
+  @UseGuards(new AuthenticatedGuard())
   @Post()
   getCoti(@Body() body: GetCotiReqDto): Promise<GetCotiResDto> {
     return this.appService.getCoti(body);
