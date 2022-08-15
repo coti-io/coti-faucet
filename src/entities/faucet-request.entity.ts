@@ -1,13 +1,21 @@
-import { Column, Entity, EntityManager, JoinColumn, OneToOne } from 'typeorm';
+import {
+  Column,
+  Entity,
+  EntityManager,
+  JoinColumn,
+  ManyToOne,
+  OneToOne,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { exec } from '../utils/promise-helper';
 import { SupportedCurrenciesEntity } from './supported-currencies';
-import { TablesNames } from "../utils/table-names.enum";
+import { TablesNames } from '../utils/table-names.enum';
+import { WalletHashesEntity } from './wallet-hashes.entity';
 
 @Entity(TablesNames.FAUCET_REQUEST)
 export class FaucetRequestEntity extends BaseEntity {
   @Column()
-  walletHash: string;
+  walletHashId: number;
 
   @Column()
   currencyId: number;
@@ -20,20 +28,28 @@ export class FaucetRequestEntity extends BaseEntity {
     (supportedCurrenciesEntity) => supportedCurrenciesEntity.faucetRequest,
   )
   @JoinColumn({ name: 'currencyId' })
-  supportedCurrenciesEntity: SupportedCurrenciesEntity;
+  supportedCurrency: SupportedCurrenciesEntity;
+
+  @ManyToOne(
+    () => WalletHashesEntity,
+    (walletHashesEntity) => walletHashesEntity.faucetRequests,
+  )
+  @JoinColumn({ name: 'walletHashId' })
+  walletHash: WalletHashesEntity;
 }
 
-export const isWalletHashValid = async (
+export const getLatestFaucetRequest = async (
   manager: EntityManager,
-  walletHash: string,
+  walletHashId: number,
   currencyId: number,
 ): Promise<FaucetRequestEntity> => {
   const [validWalletHashError, validWalletHash] = await exec(
     manager
       .getRepository<FaucetRequestEntity>(TablesNames.FAUCET_REQUEST)
       .createQueryBuilder(TablesNames.FAUCET_REQUEST)
-      .where({ walletHash: walletHash })
+      .where({ walletHashId: walletHashId })
       .andWhere({ currencyId: currencyId })
+      .orderBy({ id: 'DESC' })
       .getOne(),
   );
 

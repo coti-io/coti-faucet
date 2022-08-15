@@ -4,7 +4,7 @@ import {
   Logger,
   OnModuleInit,
 } from '@nestjs/common';
-import { getManager } from 'typeorm';
+import { EntityManager, getManager } from 'typeorm';
 import { Wallet } from '@coti-io/crypto';
 import { getCurrencyHashBySymbol } from '@coti-io/crypto/dist/utils/utils';
 import { ConfigService } from '@nestjs/config';
@@ -13,11 +13,16 @@ import { exec } from './utils/promise-helper';
 import {
   FaucetRequestEntity,
   isCurrencyHashValid,
-  isWalletHashValid,
+  getLatestFaucetRequest,
+  SupportedCurrenciesEntity,
 } from './entities';
 import { createTransaction, sendTransaction } from './utils/helpers';
 import moment from 'moment';
 import { TablesNames } from './utils/table-names.enum';
+import {
+  getWalletHashEntity,
+  WalletHashesEntity,
+} from './entities/wallet-hashes.entity';
 
 @Injectable()
 export class AppService implements OnModuleInit {
@@ -28,7 +33,7 @@ export class AppService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     const fullnode = this.configService.get<string>('FULL_NODE');
-    const trustScoreNode = this.configService.get<string>('TRUST_SCORE');
+    const trustScoreNode = this.configService.get<string>('TRUST_SCORE_NODE');
     const seed = this.configService.get<string>('WALLET_SEED').slice(0, 64);
     try {
       this.wallet = new Wallet({ seed, fullnode, trustScoreNode });
@@ -43,80 +48,139 @@ export class AppService implements OnModuleInit {
 
   async getCoti(body: GetCotiReqDto): Promise<GetCotiResDto> {
     const manager = getManager();
-    const nativeCurrencyHash = getCurrencyHashBySymbol('COTI');
     try {
+      const { walletHash, address, amount, currencyHash } = body;
+      const validCurrency = await validateCurrencyHashAndGetWalletHash(
+        manager,
+        currencyHash,
+        walletHash,
+      );
       return await manager.transaction(async (transactionManager) => {
-        const { walletHash, address, amount, currencyHash } = body;
-        let newFaucetRequest;
+        const [lockedWalletHashEntityError, lockedWalletHashEntity] =
+          await exec(getWalletHashEntity(transactionManager, walletHash, true));
+        if (lockedWalletHashEntityError) throw lockedWalletHashEntityError;
 
-        const [validCurrencyError, validCurrency] = await exec(
-          isCurrencyHashValid(transactionManager, currencyHash),
+        const [latestRequestError, latestRequest] = await exec(
+          getLatestFaucetRequest(
+            transactionManager,
+            lockedWalletHashEntity.id,
+            validCurrency.id,
+          ),
         );
-        if (validCurrencyError) throw validCurrencyError;
+        if (latestRequestError) throw latestRequestError;
 
-        const [validWalletHashError, validWalletHash] = await exec(
-          isWalletHashValid(transactionManager, walletHash, validCurrency.id),
-        );
-        if (validWalletHashError) throw validWalletHashError;
+        await validateRequest(latestRequest);
+        const newFaucetRequest = transactionManager
+          .getRepository<FaucetRequestEntity>(TablesNames.FAUCET_REQUEST)
+          .create({
+            walletHashId: lockedWalletHashEntity.id,
+            currencyId: validCurrency.id,
+            lastRequestTime: new Date(),
+          });
 
-        if (validWalletHash) {
-          const hoursDiff = moment().diff(
-            moment(validWalletHash.lastRequestTime),
-            'hours',
-          );
-
-          if (hoursDiff < 24) {
-            throw new BadRequestException(
-              'request from faucet is available once a day',
-            );
-          }
-        } else {
-          newFaucetRequest = transactionManager
-            .getRepository<FaucetRequestEntity>(TablesNames.FAUCET_REQUEST)
-            .create({
-              walletHash,
-              currencyId: validCurrency.id,
-              lastRequestTime: new Date(),
-            });
-        }
-
-        const poolAddress = await this.wallet.getAddressByIndex(0);
-        const poolAddressHex = poolAddress.getAddressHex();
-
-        // create transaction
-        const tx = await createTransaction({
-          sourceAddress: poolAddressHex,
-          destinationAddress: address,
-          amount,
-          feeAddress: poolAddressHex,
-          feeIncluded: false,
-          currencyHash,
-          originalCurrencyHash: nativeCurrencyHash,
-          inputMap: null,
+        return await createAndSendTx({
           wallet: this.wallet,
+          address,
+          amount,
+          currencyHash,
+          newFaucetRequest,
+          transactionManager,
         });
-
-        // save/update faucet action
-        if (newFaucetRequest) {
-          await transactionManager.save(newFaucetRequest);
-        } else {
-          await transactionManager
-            .getRepository<FaucetRequestEntity>(TablesNames.FAUCET_REQUEST)
-            .update(
-              { id: validWalletHash.id },
-              { lastRequestTime: new Date() },
-            );
-        }
-
-        // send transaction
-        const [error] = await exec(sendTransaction(tx, this.wallet));
-        if (error) throw error;
-
-        return { txHash: tx.getHash() };
       });
     } catch (error) {
       this.logger.error(error);
       throw error;
     }
+  }
+}
+
+export async function createAndSendTx(params: {
+  wallet: Wallet;
+  address: string;
+  currencyHash: string;
+  amount: number;
+  newFaucetRequest: FaucetRequestEntity;
+  transactionManager: EntityManager;
+}): Promise<GetCotiResDto> {
+  const {
+    wallet,
+    address,
+    amount,
+    currencyHash,
+    newFaucetRequest,
+    transactionManager,
+  } = params;
+  const nativeCurrencyHash = getCurrencyHashBySymbol('COTI');
+  const poolAddress = await wallet.getAddressByIndex(0);
+  const poolAddressHex = poolAddress.getAddressHex();
+
+  // create transaction
+  const tx = await createTransaction({
+    sourceAddress: poolAddressHex,
+    destinationAddress: address,
+    amount,
+    feeAddress: poolAddressHex,
+    feeIncluded: false,
+    currencyHash,
+    originalCurrencyHash: nativeCurrencyHash,
+    inputMap: null,
+    wallet,
+  });
+
+  // save/update faucet action
+  if (newFaucetRequest) {
+    await transactionManager.save(newFaucetRequest);
+  }
+
+  // send transaction
+  const [error] = await exec(sendTransaction(tx, wallet));
+  if (error) throw error;
+
+  return { txHash: tx.getHash() };
+}
+
+export async function validateRequest(latestRequest: FaucetRequestEntity) {
+  if (latestRequest) {
+    const hoursDiff = moment().diff(
+      moment(latestRequest.lastRequestTime),
+      'hours',
+    );
+
+    if (hoursDiff < 24) {
+      throw new BadRequestException(
+        'request from faucet is available once a day',
+      );
+    }
+  }
+}
+
+export async function validateCurrencyHashAndGetWalletHash(
+  manager: EntityManager,
+  currencyHash: string,
+  walletHash: string,
+): Promise<SupportedCurrenciesEntity> {
+  try {
+    const [validCurrencyError, validCurrency] = await exec(
+      isCurrencyHashValid(manager, currencyHash),
+    );
+    if (validCurrencyError) throw validCurrencyError;
+
+    const [walletHashEntityError, walletHashEntity] = await exec(
+      getWalletHashEntity(manager, walletHash, false),
+    );
+    if (walletHashEntityError) throw walletHashEntityError;
+
+    if (!walletHashEntity) {
+      const newWalletHashEntity = manager
+        .getRepository<WalletHashesEntity>(TablesNames.WALLETHASHES)
+        .create({
+          walletHash,
+        });
+      const [saveError] = await exec(manager.save(newWalletHashEntity));
+      if (saveError) throw saveError;
+    }
+    return validCurrency;
+  } catch (e) {
+    throw e;
   }
 }

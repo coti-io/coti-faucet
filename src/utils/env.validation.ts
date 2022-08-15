@@ -16,7 +16,7 @@ export function validate() {
       WALLET_SEED: Joi.string(),
       NETWORK: Joi.string(),
       FULL_NODE: Joi.string(),
-      TRUST_SCORE: Joi.string(),
+      TRUST_SCORE_NODE: Joi.string(),
     }),
     validationOptions: {
       allowUnknown: true, // TODO Check

@@ -1,6 +1,10 @@
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { FaucetRequestEntity, SupportedCurrenciesEntity } from '../entities';
+import {
+  FaucetRequestEntity,
+  SupportedCurrenciesEntity,
+  WalletHashesEntity,
+} from '../entities';
 
 export function DBInit() {
   return TypeOrmModule.forRootAsync({
@@ -13,7 +17,11 @@ export function DBInit() {
       username: configService.get<string>('DB_USER'),
       password: configService.get<string>('DB_PASSWORD'),
       database: configService.get<string>('DB_NAME'),
-      entities: [FaucetRequestEntity, SupportedCurrenciesEntity],
+      entities: [
+        FaucetRequestEntity,
+        SupportedCurrenciesEntity,
+        WalletHashesEntity,
+      ],
       connectTimeout: 60 * 60 * 1000,
       acquireTimeout: 60 * 60 * 1000,
       timeout: 60 * 60 * 1000,

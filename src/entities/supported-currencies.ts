@@ -12,7 +12,7 @@ export class SupportedCurrenciesEntity extends BaseEntity {
 
   @OneToOne(
     () => FaucetRequestEntity,
-    (faucetRequestEntity) => faucetRequestEntity.supportedCurrenciesEntity,
+    (faucetRequestEntity) => faucetRequestEntity.supportedCurrency,
   )
   faucetRequest: FaucetRequestEntity;
 }
