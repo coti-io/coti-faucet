@@ -12,8 +12,8 @@ import { GetCotiReqDto, GetCotiResDto } from './dtos/faucet.dto';
 import { exec } from './utils/promise-helper';
 import {
   FaucetRequestEntity,
-  isCurrencyHashValid,
   getLatestFaucetRequest,
+  isCurrencyHashValid,
   SupportedCurrenciesEntity,
 } from './entities';
 import { createTransaction, sendTransaction } from './utils/helpers';

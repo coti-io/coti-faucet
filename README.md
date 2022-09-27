@@ -5,6 +5,7 @@
 github-url: https://github.com/coti-io/coti-faucet/issues
 
 ## Description
+
 The coti faucet is an API with the goal of distributing small amounts of Coti in the test network.
 
 ## Installation

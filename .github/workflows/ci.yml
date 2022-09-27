@@ -21,6 +21,6 @@ jobs:
           node-version: 16.13.2
 
       - name: Build
-        run: | 
+        run: |
           npm ci
           npm run build
