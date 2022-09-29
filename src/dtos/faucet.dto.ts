@@ -1,4 +1,4 @@
-import { IsHexadecimal, IsNotEmpty, IsNumber } from 'class-validator';
+import { IsHexadecimal, IsNotEmpty, IsNumber, IsPositive } from 'class-validator';
 
 export class GetCotiReqDto {
   @IsHexadecimal()
@@ -10,7 +10,7 @@ export class GetCotiReqDto {
   address: string;
 
   @IsNumber()
-  @IsNotEmpty()
+  @IsPositive()
   amount: number;
 
   @IsHexadecimal()

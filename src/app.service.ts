@@ -13,16 +13,14 @@ import { exec } from './utils/promise-helper';
 import {
   FaucetRequestEntity,
   getLatestFaucetRequest,
+  getWalletHashEntity,
   isCurrencyHashValid,
   SupportedCurrenciesEntity,
+  WalletHashesEntity,
 } from './entities';
 import { createTransaction, sendTransaction } from './utils/helpers';
 import moment from 'moment';
 import { TablesNames } from './utils/table-names.enum';
-import {
-  getWalletHashEntity,
-  WalletHashesEntity,
-} from './entities/wallet-hashes.entity';
 
 @Injectable()
 export class AppService implements OnModuleInit {
@@ -78,7 +76,7 @@ export class AppService implements OnModuleInit {
             lastRequestTime: new Date(),
           });
 
-        return await createAndSendTx({
+        return createAndSendTx({
           wallet: this.wallet,
           address,
           amount,
